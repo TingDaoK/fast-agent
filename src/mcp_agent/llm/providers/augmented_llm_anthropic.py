@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from mcp import ListToolsResult
 
 
-from anthropic import Anthropic, AuthenticationError
+from anthropic import Anthropic, AuthenticationError, AnthropicBedrock
 from anthropic.types import (
     Message,
     MessageParam,
@@ -39,6 +39,8 @@ from mcp_agent.llm.augmented_llm import (
     RequestParams,
 )
 from mcp_agent.logging.logger import get_logger
+from awscrt.auth import AwsCredentialsProvider
+import awscrt.io
 
 DEFAULT_ANTHROPIC_MODEL = "claude-3-7-sonnet-latest"
 
@@ -104,7 +106,25 @@ class AnthropicAugmentedLLM(AugmentedLLM[MessageParam, Message]):
             base_url = base_url.rstrip("/v1")
 
         try:
-            anthropic = Anthropic(api_key=api_key, base_url=base_url)
+            event_loop_group = awscrt.io.EventLoopGroup()
+            host_resolver = awscrt.io.DefaultHostResolver(event_loop_group)
+            bootstrap = awscrt.io.ClientBootstrap(event_loop_group, host_resolver)
+            provider = AwsCredentialsProvider.new_default_chain(bootstrap)
+
+            future = provider.get_credentials()
+            credentials = future.result()
+            anthropic = AnthropicBedrock(
+                    # Authenticate by either providing the keys below or use the default AWS credential providers, such as
+                    # using ~/.aws/credentials or the "AWS_SECRET_ACCESS_KEY" and "AWS_ACCESS_KEY_ID" environment variables.
+                    aws_access_key=credentials.access_key_id,
+                    aws_secret_key=credentials.secret_access_key,
+                    # Temporary credentials can be used with aws_session_token.
+                    # Read more at https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp.html.
+                    aws_session_token=credentials.session_token,
+                    # aws_region changes the aws region to which the request is made. By default, we read AWS_REGION,
+                    # and if that's not present, we default to us-east-1. Note that we do not read ~/.aws/config for the region.
+                    aws_region="us-west-2",
+                )
             messages: List[MessageParam] = []
             params = self.get_request_params(request_params)
         except AuthenticationError as e:
@@ -137,7 +157,7 @@ class AnthropicAugmentedLLM(AugmentedLLM[MessageParam, Message]):
             self._log_chat_progress(self.chat_turn(), model=model)
             # Create base arguments dictionary
             base_args = {
-                "model": model,
+                "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
                 "messages": messages,
                 "system": self.instruction or params.systemPrompt,
                 "stop_sequences": params.stopSequences,
