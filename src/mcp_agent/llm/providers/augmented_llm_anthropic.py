@@ -26,6 +26,7 @@ from anthropic.types import (
     ToolParam,
     ToolUseBlockParam,
     Usage,
+    ThinkingConfigEnabledParam
 )
 from mcp.types import (
     CallToolRequest,
@@ -162,6 +163,7 @@ class AnthropicAugmentedLLM(AugmentedLLM[MessageParam, Message]):
                 "system": self.instruction or params.systemPrompt,
                 "stop_sequences": params.stopSequences,
                 "tools": available_tools,
+                # "thinking": ThinkingConfigEnabledParam(budget_tokens=2048, type="enabled"),
             }
 
             if params.maxTokens is not None:
@@ -216,6 +218,9 @@ class AnthropicAugmentedLLM(AugmentedLLM[MessageParam, Message]):
             messages.append(response_as_message)
             if response.content[0].type == "text":
                 responses.append(TextContent(type="text", text=response.content[0].text))
+            # elif response.content[0].type == "thinking" or "redacted_thinking":
+            #     # pass it down directly
+            #     print(f"thinking: {response.content[0]}")
 
             if response.stop_reason == "end_turn":
                 message_text = ""
@@ -312,6 +317,7 @@ class AnthropicAugmentedLLM(AugmentedLLM[MessageParam, Message]):
             self.history.set(new_messages)
 
         self._log_chat_finished(model=model)
+        # print(f"Anthropic response: {responses}")
 
         return responses
 
